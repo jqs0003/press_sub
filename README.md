@@ -5,11 +5,15 @@
 ![Web 工作台界面](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-blue)
 ![Python](https://img.shields.io/badge/Python-3.9%2B-green)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-Hardware%20Accelerated-orange)
+![Standalone](https://img.shields.io/badge/Standalone-Zero%20Dependency-brightgreen)
 
 ---
 
 ## 🌟 核心特性
 
+- **🚀 零依赖开箱即用**：
+  - 内置独立可执行程序（打包了完整 Python 运行时与 FastAPI 服务），无需安装 Python、pip 或任何额外依赖库，双击即用。
+  - 底层 FFmpeg 智能自动检索（支持程序同级目录、嵌入环境以及系统 PATH 自动识别）。
 - **📁 智能目录探测与配对**：
   - **根目录同放模式**：视频与字幕都在同一个根目录下，自动精准识别成对配对。
   - **分目录存放模式**：支持视频在子目录、字幕在 `en/` 或独立子目录的经典结构。
@@ -32,40 +36,46 @@
 
 ---
 
-## 🚀 快速启动
+## 🚀 快速启动（开箱即用）
 
-### 前置要求
-- **Python** 3.9 或更高版本。
-- **FFmpeg**：确保系统安装了 `ffmpeg` 并已加入系统环境变量 PATH（Mac 上可通过 `brew install ffmpeg` 安装）。
+### 🍎 macOS 用户（两种方式，任选其一）
 
-### 🍎 macOS 用户
-克隆项目后，在终端执行一键启动脚本：
+#### 方式 1：一键脚本（自动优先运行已打包的独立程序）
 ```bash
 git clone https://github.com/jqs0003/press_sub.git
 cd press_sub
 ./run_web.sh
 ```
-服务启动后将自动在默认浏览器中打开控制台：`http://127.0.0.1:8765`。
+
+#### 方式 2：直接双击运行独立程序
+直接双击项目中的 `bin/短剧字幕批量压制工具` 即可直接启动，系统将自动在默认浏览器中打开控制台：`http://127.0.0.1:8765`。
+> 💡 完全不需要安装 Python 或执行 pip install！
 
 ---
 
 ### 🪟 Windows 用户
 1. 双击运行项目根目录下的 **`run_windows.bat`**：
-   - 脚本会自动检测 Python 环境，创建专用 `venv_win` 虚拟环境；
-   - 自动安装依赖包并打开默认浏览器访问控制台。
-2. **FFmpeg 配置**：如系统未安装 FFmpeg，可下载 Windows 版 `ffmpeg.exe` 并直接放置在本项目根目录下即可自动识别。
+   - 若检测到 `bin\短剧字幕批量压制工具.exe`，将直接秒开独立程序；
+   - 否则会自动配置 Python 虚拟环境并启动。
+2. **FFmpeg 配置**：如系统未安装 FFmpeg，可下载 Windows 版 `ffmpeg.exe` 并直接放置在本项目根目录下，程序会自动加载识别。
 
 ---
 
-## 📦 Windows EXE 独立打包
+## 📦 独立可执行程序打包构建
 
-项目已配置好 PyInstaller 规范与 GitHub Actions 自动化打包：
+项目提供全套一键打包脚本与 GitHub Actions 云编译工作流：
 
-### 方式 1：Windows 本机打包
-在 Windows 电脑上双击运行 **`build_exe.bat`**，即可在 `dist/` 目录下生成独立的 `短剧字幕批量压制工具.exe`。
+### 1. macOS 本地一键打包
+```bash
+./build_macos.sh
+```
+打包生成的可执行程序将自动整理到 `bin/短剧字幕批量压制工具`。
 
-### 方式 2：GitHub Actions 自动云编译（Mac 用户适用）
-无需 Windows 电脑，只需在 GitHub 仓库中进入 **Actions** -> 选择 **Build Windows EXE** -> 点击 **Run workflow**，云端 Windows 机器将自动编译生成包含 FFmpeg 的 `.zip` 压缩包供直接下载使用。
+### 2. Windows 本地一键打包
+在 Windows 电脑上双击运行 **`build_exe.bat`**，即可自动生成 `bin\短剧字幕批量压制工具.exe`。
+
+### 3. GitHub Actions 自动云端编译（多端 Release）
+在 GitHub 仓库页面进入 **Actions** -> 选择 **Build Standalone Executables (Windows & macOS)** -> 点击 **Run workflow**，即可免费云端编译并下载 Windows (`.exe` 带 FFmpeg 打包) 与 macOS 架构的免安装便携版。
 
 ---
 
@@ -73,20 +83,23 @@ cd press_sub
 
 ```text
 ├── app.py                      # Web 主程序入口
-├── run_web.sh                  # macOS 一键启动脚本
-├── run_windows.bat             # Windows 一键启动脚本
-├── build_exe.bat               # Windows EXE 打包脚本
-├── press_sub.spec              # PyInstaller 打包配置
-├── requirements.txt            # Python 核心依赖
+├── run_web.sh                  # macOS 一键启动脚本（优先使用独立程序）
+├── run_windows.bat             # Windows 一键启动脚本（优先使用独立程序）
+├── build_macos.sh              # macOS 独立程序一键打包脚本
+├── build_exe.bat               # Windows EXE 一键打包脚本
+├── press_sub.spec              # PyInstaller 多端打包规范配置
+├── requirements.txt            # Python 核心依赖（仅源码运行/打包时需要）
 ├── batch_press_sub.py          # 纯 CLI 备用批量压制脚本
+├── bin/                        # 开箱即用独立可执行程序目录
+│   └── 短剧字幕批量压制工具      # macOS 独立可执行程序（免 Python 环境）
 ├── web/
 │   ├── app.py                  # FastAPI 后端服务与路由定义
 │   ├── matcher.py              # 智能集数提取与字幕自动配对引擎
-│   └── presser.py              # 并发压制调度管理与 FFmpeg 命令封装
+│   └── presser.py              # 并发压制调度管理与 FFmpeg 智能查找调用
 ├── static/
 │   └── index.html              # 现代化响应式控制台前端页面
 └── .github/workflows/
-    └── build_windows_exe.yml   # Windows EXE 云端自动打包工作流
+    └── build_releases.yml      # Windows & macOS 多端云端自动打包工作流
 ```
 
 ---

@@ -32,8 +32,13 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [3/3] 打包完成！
-echo 生成的 EXE 位于: dist\短剧字幕批量压制工具.exe
+echo [3/3] 整理发布目录...
+if not exist "bin" mkdir bin
+copy /y "dist\短剧字幕批量压制工具.exe" "bin\短剧字幕批量压制工具.exe"
+
 echo.
-echo 提示：运行 EXE 时请确保电脑已安装 ffmpeg（或将 ffmpeg.exe 复制到与该 EXE 同级目录下）。
+echo ✅ 打包完成！
+echo 生成的 EXE 位于: bin\短剧字幕批量压制工具.exe
+echo.
+echo 提示：双击该 EXE 即可直接使用，无需安装 Python 环境。
 pause

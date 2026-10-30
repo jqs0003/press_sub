@@ -11,8 +11,10 @@ import json
 import logging
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -20,6 +22,67 @@ from typing import Any, Callable, Dict, List, Optional
 import uuid
 
 logger = logging.getLogger("presser")
+
+
+def find_executable(name: str) -> str:
+    """智能查找 ffmpeg / ffprobe 可执行程序路径"""
+    env_key = f"{name.upper()}_PATH"
+    if os.environ.get(env_key) and os.path.isfile(os.environ[env_key]):
+        return os.environ[env_key]
+
+    search_dirs: List[Path] = []
+
+    # 1. PyInstaller 打包运行临时目录与可执行文件所在目录
+    if getattr(sys, "frozen", False):
+        search_dirs.append(Path(sys._MEIPASS))
+        search_dirs.append(Path(sys.executable).resolve().parent)
+        search_dirs.append(Path(sys.executable).resolve().parent / "bin")
+
+    # 2. 当前工作目录与当前代码上级目录
+    search_dirs.append(Path.cwd())
+    search_dirs.append(Path.cwd() / "bin")
+    search_dirs.append(Path(__file__).resolve().parent.parent)
+    search_dirs.append(Path(__file__).resolve().parent.parent / "bin")
+
+    # 3. 常见操作系统默认安装路径
+    sys_name = platform.system()
+    if sys_name == "Darwin":
+        search_dirs.extend([
+            Path("/opt/homebrew/bin"),
+            Path("/usr/local/bin"),
+            Path("/usr/bin"),
+        ])
+    elif sys_name == "Windows":
+        search_dirs.extend([
+            Path("C:/ffmpeg/bin"),
+            Path("C:/Program Files/ffmpeg/bin"),
+        ])
+    else:
+        search_dirs.extend([
+            Path("/usr/local/bin"),
+            Path("/usr/bin"),
+        ])
+
+    exe_names = [name]
+    if sys_name == "Windows":
+        exe_names.append(f"{name}.exe")
+
+    for d in search_dirs:
+        for en in exe_names:
+            candidate = d / en
+            if candidate.is_file() and os.access(candidate, os.X_OK if sys_name != "Windows" else os.R_OK):
+                return str(candidate)
+
+    # 4. 系统 PATH 环境变量查找
+    found = shutil.which(name)
+    if found:
+        return found
+    if sys_name == "Windows":
+        found_win = shutil.which(f"{name}.exe")
+        if found_win:
+            return found_win
+
+    return name
 
 
 class TaskManager:
@@ -154,6 +217,10 @@ class TaskManager:
         if platform.system() != "Darwin" and encoder == "h264_videotoolbox":
             encoder = "h264_nvenc"  # Windows/Linux 优先尝试 NVENC，若无卡会自动回退 libx264
 
+        ffmpeg_bin = find_executable("ffmpeg")
+        ffprobe_bin = find_executable("ffprobe")
+
+        self.add_log("INFO", f"底层引擎检测: FFmpeg -> {ffmpeg_bin}")
         self.add_log("INFO", f"字幕参数配置: 字号={font_size}px, 距底={bottom_pct}%, Alignment={alignment}, MarginV={margin_v}")
         self.add_log("INFO", f"编码器参数: {encoder}, 码率: {bitrate}, 同步覆盖原文件: {'是' if sync_overwrite else '否'}")
 
@@ -193,7 +260,7 @@ class TaskManager:
 
             try:
                 cmd = [
-                    "ffmpeg", "-y",
+                    ffmpeg_bin, "-y",
                     "-i", str(v_path),
                     "-vf", f"subtitles='{safe_sub}':force_style='{force_style}'",
                     "-c:v", encoder,
@@ -225,7 +292,7 @@ class TaskManager:
 
                 # 校验输出
                 probe_cmd = [
-                    "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                    ffprobe_bin, "-v", "error", "-show_entries", "format=duration",
                     "-of", "default=noprint_wrappers=1:nokey=1", str(tmp_out)
                 ]
                 probe = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

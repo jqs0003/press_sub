@@ -8,7 +8,20 @@ echo.
 
 cd /d "%~dp0"
 
-:: 1. 检查当前目录是否存在 ffmpeg.exe，若有则加入临时 PATH
+:: 1. 检查是否存在独立打包的 EXE 程序（零依赖、开箱即用）
+if exist "%~dp0bin\短剧字幕批量压制工具.exe" (
+    echo [OK] 检测到独立可执行程序: bin\短剧字幕批量压制工具.exe
+    start "" "%~dp0bin\短剧字幕批量压制工具.exe" %*
+    exit /b 0
+)
+
+if exist "%~dp0dist\短剧字幕批量压制工具.exe" (
+    echo [OK] 检测到独立可执行程序: dist\短剧字幕批量压制工具.exe
+    start "" "%~dp0dist\短剧字幕批量压制工具.exe" %*
+    exit /b 0
+)
+
+:: 2. 检查当前目录是否存在 ffmpeg.exe，若有则加入临时 PATH
 if exist "%~dp0ffmpeg.exe" (
     echo [OK] 检测到当前目录下的 ffmpeg.exe，已加入运行路径。
     set "PATH=%~dp0;%PATH%"
@@ -22,10 +35,10 @@ if exist "%~dp0ffmpeg.exe" (
     )
 )
 
-:: 2. 检查 Python 环境
+:: 3. 检查 Python 环境
 where python >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [错误] 未检测到 Python 环境！
+    echo [错误] 未检测到独立 EXE 程序，亦未检测到 Python 环境！
     echo 请先安装 Python 3.9+ 并务必勾选 "Add python.exe to PATH"
     echo 官方下载: https://www.python.org/downloads/
     echo.
@@ -33,7 +46,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: 3. 检查或创建虚拟环境
+:: 4. 检查或创建虚拟环境
 if not exist "venv_win" (
     echo [1/3] 正在初始化 Python 虚拟环境 (venv_win)...
     python -m venv venv_win
@@ -45,7 +58,7 @@ if not exist "venv_win" (
 
 call venv_win\Scripts\activate.bat
 
-:: 4. 安装/检查依赖
+:: 5. 安装/检查依赖
 if not exist "venv_win\.installed" (
     echo [2/3] 首次启动，正在安装 Web 依赖包 (fastapi, uvicorn)...
     python -m pip install --upgrade pip -i https://pypi.tuna.tsinghua.edu.cn/simple
