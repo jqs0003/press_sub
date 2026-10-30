@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>短剧字幕批量压制工作台</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* 滚动条优化 */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #1e293b; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    .log-line { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+
+  <!-- 顶部导航 -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg text-white leading-tight">短剧字幕批量压制工作台</h1>
+          <p class="text-xs text-slate-400">智能目录配对 · 硬件加速硬字幕压制 · 实时监控</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3">
+        <span id="connBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
+          <span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          服务在线
+        </span>
+        <button onclick="openOutputFinder()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1.5 transition">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+          <span>在 Finder 中查看输出</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主体区域 -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+
+    <!-- 卡片 1: 目录配置与扫描 -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-3">
+        <div>
+          <h2 class="text-base font-semibold text-white flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+            <span>1. 目录设置与智能配对</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">选择短剧根目录即可一键自动探测其中的分集视频与字幕目录</p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="scanAuto()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center space-x-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span>智能扫描并匹配</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 智能根目录快捷选择 -->
+        <div class="flex items-center justify-between">
+          <label class="block text-xs font-semibold text-slate-300">短剧项目根目录 (推荐)</label>
+          <span class="text-[11px] text-slate-400">✨ 支持视频与字幕放在同一目录，或分别存放在子目录下</span>
+        </div>
+        <div class="flex space-x-2">
+          <input type="text" id="rootDir" placeholder="/Users/jqs/chaodian/video/press_sub_mp4" 
+            class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+          <button onclick="pickFolderNative('rootDir')" class="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-indigo-600/30 transition flex items-center space-x-1.5" title="调起 macOS 原生 Finder 窗口选择文件夹">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+            <span>系统选择</span>
+          </button>
+          <button onclick="openFolderPicker('rootDir')" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition flex items-center space-x-1.5" title="在网页目录树弹窗中点选">
+            <span>目录树</span>
+          </button>
+        </div>
+        <!-- 常用快捷路径建议 -->
+        <div class="flex flex-wrap items-center gap-2 pt-1">
+          <span class="text-xs text-slate-500">快捷预设:</span>
+          <button onclick="setRootDir('/Users/jqs/chaodian/video/press_sub_mp4')" class="text-xs bg-slate-800/80 hover:bg-slate-800 text-indigo-300 border border-slate-700/60 px-2.5 py-1 rounded-lg transition">
+            当前项目 (press_sub_mp4)
+          </button>
+          <button onclick="setRootDir('/Users/jqs/chaodian/video')" class="text-xs bg-slate-800/80 hover:bg-slate-800 text-slate-400 border border-slate-700/60 px-2.5 py-1 rounded-lg transition">
+            上级目录 (/video)
+          </button>
+        </div>
+      </div>
+
+      <!-- 高级分步目录（折叠/展开） -->
+      <details class="group border border-slate-800 rounded-xl bg-slate-950/60 overflow-hidden">
+        <summary class="px-4 py-3 cursor-pointer text-xs font-semibold text-slate-400 hover:text-slate-200 select-none flex items-center justify-between">
+          <span>高级设置：精确指定视频、字幕与输出目录</span>
+          <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </summary>
+        <div class="p-4 pt-1 space-y-3.5 border-t border-slate-800/50">
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">视频目录 (Video Folder)</label>
+            <div class="flex space-x-2">
+              <input type="text" id="videoDir" placeholder="包含分集 .mp4 文件的目录" 
+                class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <button onclick="pickFolderNative('videoDir')" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg font-medium shadow-sm transition">系统选择</button>
+              <button onclick="openFolderPicker('videoDir')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg border border-slate-700">目录树</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">字幕目录 (Subtitle Folder)</label>
+            <div class="flex space-x-2">
+              <input type="text" id="subDir" placeholder="包含对应 .vtt / .srt 文件的目录" 
+                class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <button onclick="pickFolderNative('subDir')" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg font-medium shadow-sm transition">系统选择</button>
+              <button onclick="openFolderPicker('subDir')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg border border-slate-700">目录树</button>
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">输出目录 (Output Folder)</label>
+            <div class="flex space-x-2">
+              <input type="text" id="outputDir" placeholder="压制后保存的目标目录" 
+                class="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <button onclick="pickFolderNative('outputDir')" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg font-medium shadow-sm transition">系统选择</button>
+              <button onclick="openFolderPicker('outputDir')" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg border border-slate-700">目录树</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- 压制参数面板 -->
+      <div class="pt-3 border-t border-slate-800">
+        <h3 class="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">压制参数配置</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">字幕字号 (px)</label>
+            <input type="number" id="fontSize" value="18" min="10" max="60"
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">距底部比例 (%)</label>
+            <input type="number" id="bottomPct" value="20" min="5" max="50" step="1"
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">对齐方式</label>
+            <select id="alignment" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+              <option value="2" selected>底部水平居中 (默认)</option>
+              <option value="5">画面绝对正中</option>
+              <option value="1">底部左对齐</option>
+              <option value="3">底部右对齐</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">视频编码器</label>
+            <select id="encoder" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+              <option value="h264_videotoolbox" selected>Mac 硬件加速 (VideoToolbox)</option>
+              <option value="h264_nvenc">Windows N卡加速 (NVENC)</option>
+              <option value="libx264">通用 CPU 软解 (libx264)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">视频码率</label>
+            <input type="text" id="bitrate" value="1200k"
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">并发压制数</label>
+            <input type="number" id="concurrency" value="2" min="1" max="4"
+              class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500">
+          </div>
+        </div>
+
+        <div class="mt-3 flex items-center space-x-2">
+          <input type="checkbox" id="syncOverwrite" class="w-4 h-4 rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-900">
+          <label for="syncOverwrite" class="text-xs text-slate-400 select-none cursor-pointer">
+            压制完成后，同时同步覆盖源视频目录中的文件（默认仅保存在 output 目录，勾选后将自动覆盖原视频）
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 卡片 2: 配对预览与批量操作 -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-3">
+        <div class="flex items-center space-x-3">
+          <h2 class="text-base font-semibold text-white flex items-center space-x-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <span>2. 分集配对列表与压制控制</span>
+          </h2>
+          <span id="statSummary" class="text-xs text-slate-400">未扫描</span>
+        </div>
+
+        <!-- 操作按钮组 -->
+        <div class="flex items-center space-x-2">
+          <button id="btnStart" onclick="startBatch()" disabled 
+            class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center space-x-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>开始批量压制</span>
+          </button>
+
+          <button id="btnStop" onclick="stopBatch()" disabled 
+            class="px-4 py-2 bg-rose-950 hover:bg-rose-900 disabled:opacity-40 disabled:cursor-not-allowed text-rose-300 text-sm font-medium rounded-xl border border-rose-800/60 transition flex items-center space-x-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+            </svg>
+            <span>终止任务</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 总体进度条 -->
+      <div id="progressBox" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2 hidden">
+        <div class="flex items-center justify-between text-xs">
+          <span class="font-medium text-slate-300 flex items-center space-x-2">
+            <span id="progressStateIcon" class="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+            <span id="progressStateText">正在压制中...</span>
+          </span>
+          <span class="text-slate-400">
+            进度: <span id="progressPct" class="text-white font-semibold">0%</span>
+            (<span id="progressCounts">0/0</span>) · 用时: <span id="progressElapsed" class="text-indigo-400 font-mono">0.0s</span>
+          </span>
+        </div>
+        <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+          <div id="progressBar" class="bg-gradient-to-r from-indigo-500 to-emerald-500 h-full w-0 transition-all duration-300"></div>
+        </div>
+      </div>
+
+      <!-- 配对表格 -->
+      <div class="overflow-x-auto max-h-[380px] border border-slate-800 rounded-xl bg-slate-950">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-900/90 text-slate-400 font-medium sticky top-0 border-b border-slate-800 z-10">
+            <tr>
+              <th class="py-2.5 px-3 w-10">
+                <input type="checkbox" id="selectAll" checked onchange="toggleSelectAll(this.checked)" class="rounded bg-slate-800 border-slate-700 text-indigo-600">
+              </th>
+              <th class="py-2.5 px-3 w-16">集数</th>
+              <th class="py-2.5 px-3">视频源文件</th>
+              <th class="py-2.5 px-3">匹配字幕</th>
+              <th class="py-2.5 px-3 w-28">状态</th>
+              <th class="py-2.5 px-3 w-24 text-right">大小 / 耗时</th>
+              <th class="py-2.5 px-3 w-28 text-center">操作</th>
+            </tr>
+          </thead>
+          <tbody id="episodesTbody" class="divide-y divide-slate-850 text-slate-300">
+            <tr>
+              <td colspan="7" class="py-12 text-center text-slate-500">
+                请先在上方设置短剧根目录并点击【智能扫描并匹配】
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 卡片 3: 实时运行日志控制台 -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-xs font-semibold text-slate-400 flex items-center space-x-2">
+          <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span>实时日志控制台</span>
+        </h3>
+        <button onclick="clearLogs()" class="text-xs text-slate-500 hover:text-slate-300 transition">清空日志</button>
+      </div>
+      <div id="logConsole" class="bg-slate-950 border border-slate-850 rounded-xl p-3 h-48 overflow-y-auto font-mono text-xs text-slate-400 space-y-1 select-text">
+        <div class="text-slate-600">[系统就绪] 等待任务启动...</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- 弹窗 1: 本地文件夹浏览器 -->
+  <div id="folderModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- 弹窗顶栏 -->
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+        <div>
+          <h3 class="text-sm font-semibold text-white flex items-center space-x-2">
+            <span>本地文件夹浏览与选取</span>
+            <span class="text-[10px] bg-indigo-950 text-indigo-400 border border-indigo-800 px-1.5 py-0.5 rounded">Mac 本地系统</span>
+          </h3>
+          <p class="text-xs text-slate-400 truncate max-w-md mt-0.5 font-mono" id="browserCurrentPath">/Users/...</p>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="pickFolderNativeFromModal()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow-sm transition flex items-center space-x-1" title="调起 macOS 原生 Finder 窗口选择">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+            <span>用 Finder 选取</span>
+          </button>
+          <button onclick="closeFolderPicker()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 面包屑路径栏 -->
+      <div class="px-4 py-2 border-b border-slate-800 bg-slate-950/80 flex items-center space-x-1 overflow-x-auto text-xs text-slate-400 font-mono" id="breadcrumbsBar">
+        <!-- 动态填充面包屑 -->
+      </div>
+
+      <!-- 快捷路径预设 -->
+      <div class="px-4 py-2 border-b border-slate-800/60 bg-slate-950/40 flex items-center gap-1.5 overflow-x-auto text-xs">
+        <span class="text-slate-500 text-[11px] shrink-0">常用位置:</span>
+        <div id="shortcutsBar" class="flex items-center gap-1.5">
+          <!-- 动态填充快捷方式 -->
+        </div>
+      </div>
+
+      <!-- 搜索过滤与上级控制 -->
+      <div class="p-2.5 border-b border-slate-800 bg-slate-950 flex items-center justify-between gap-2">
+        <button id="btnParentFolder" onclick="navigateParent()" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 text-xs rounded-lg border border-slate-700 flex items-center space-x-1 shrink-0">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+          <span>返回上级</span>
+        </button>
+
+        <div class="relative flex-1">
+          <input type="text" id="folderFilterInput" oninput="onFilterInput(this.value)" placeholder="在当前目录下过滤子文件夹名称..." 
+            class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+          <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- 文件夹内容列表 -->
+      <div id="folderList" class="flex-1 overflow-y-auto p-2 space-y-1 divide-y divide-slate-800/40 min-h-[240px]">
+        <!-- 目录列表项动态填充 -->
+      </div>
+
+      <!-- 弹窗底栏 -->
+      <div class="p-3 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between">
+        <div class="text-xs text-slate-400">
+          当前选中: <span class="text-indigo-300 font-mono" id="confirmPathDisplay">-</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="closeFolderPicker()" class="px-4 py-2 text-xs text-slate-400 hover:text-white transition">取消</button>
+          <button onclick="confirmSelectFolder()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition">
+            确认选择此文件夹
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗 2: 视频播放器预览 -->
+  <div id="videoModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-3 border-b border-slate-800 flex items-center justify-between">
+        <h3 id="videoTitle" class="text-xs font-semibold text-white truncate max-w-lg">视频预览</h3>
+        <button onclick="closeVideoModal()" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div class="bg-black flex items-center justify-center p-2 max-h-[70vh]">
+        <video id="previewPlayer" controls class="max-h-[65vh] w-auto rounded-lg shadow"></video>
+      </div>
+    </div>
+  </div>
+
+  <!-- 前端核心逻辑 JS -->
+  <script>
+    let currentMatchedItems = [];
+    let activeInputId = null;
+    let browserState = { current: "", parent: "", dirs: [], breadcrumbs: [], shortcuts: [] };
+    let eventSource = null;
+    let currentFilterText = "";
+
+    // 初始化
+    window.addEventListener("DOMContentLoaded", () => {
+      // 预置默认根目录
+      document.getElementById("rootDir").value = "/Users/jqs/chaodian/video/press_sub_mp4";
+      connectSSE();
+      // 自动触发一次扫描
+      scanAuto();
+    });
+
+    function setRootDir(path) {
+      document.getElementById("rootDir").value = path;
+      document.getElementById("videoDir").value = "";
+      document.getElementById("subDir").value = "";
+      document.getElementById("outputDir").value = "";
+      scanAuto();
+    }
+
+    // 调用 macOS 原生 Finder 文件夹选择对话框
+    async function pickFolderNative(targetInputId) {
+      activeInputId = targetInputId;
+      const initialPath = document.getElementById(targetInputId).value.trim();
+      try {
+        const res = await fetch("/api/choose-folder-native", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initial_dir: initialPath || null })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert("调起原生选择器失败: " + err.detail);
+          return;
+        }
+        const data = await res.json();
+        if (data.canceled) {
+          return; // 用户点击取消
+        }
+        if (data.path) {
+          document.getElementById(targetInputId).value = data.path;
+          if (targetInputId === "rootDir") {
+            document.getElementById("videoDir").value = "";
+            document.getElementById("subDir").value = "";
+            document.getElementById("outputDir").value = "";
+            scanAuto();
+          }
+        }
+      } catch (e) {
+        alert("调用原生选择器异常: " + e.message);
+      }
+    }
+
+    // 在弹窗内部调起 Finder 选择
+    async function pickFolderNativeFromModal() {
+      if (!activeInputId) return;
+      const current = browserState.current || document.getElementById(activeInputId).value.trim();
+      try {
+        const res = await fetch("/api/choose-folder-native", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ initial_dir: current || null })
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.canceled && data.path) {
+          document.getElementById(activeInputId).value = data.path;
+          closeFolderPicker();
+          if (activeInputId === "rootDir") {
+            document.getElementById("videoDir").value = "";
+            document.getElementById("subDir").value = "";
+            document.getElementById("outputDir").value = "";
+            scanAuto();
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 建立 SSE 实时连接
+    function connectSSE() {
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource("/api/events");
+
+      eventSource.onopen = () => {
+        const badge = document.getElementById("connBadge");
+        badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800";
+        badge.innerHTML = '<span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-emerald-400 animate-pulse"></span>服务在线';
+      };
+
+      eventSource.onerror = () => {
+        const badge = document.getElementById("connBadge");
+        badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800";
+        badge.innerHTML = '<span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-amber-400"></span>正在重连...';
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "log") {
+            appendLog(msg.data);
+          } else if (msg.type === "progress") {
+            updateTaskProgress(msg.data);
+          } else if (msg.type === "finish") {
+            updateTaskProgress(msg.data);
+            appendLog({ time: new Date().toLocaleTimeString(), level: "INFO", msg: "批量压制全部完成！" });
+          }
+        } catch (e) {}
+      };
+    }
+
+    // 扫描匹配
+    async function scanAuto() {
+      const rootDir = document.getElementById("rootDir").value.trim();
+      const videoDir = document.getElementById("videoDir").value.trim();
+      const subDir = document.getElementById("subDir").value.trim();
+      const outputDir = document.getElementById("outputDir").value.trim();
+
+      const btn = event?.currentTarget;
+      if (btn) btn.classList.add("opacity-50");
+
+      try {
+        const res = await fetch("/api/scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            root_dir: rootDir,
+            video_dir: videoDir || null,
+            sub_dir: subDir || null,
+            output_dir: outputDir || null
+          })
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          alert("扫描失败: " + (err.detail || "请检查目录是否存在"));
+          return;
+        }
+
+        const data = await res.json();
+        // 同步路径到界面输入框
+        document.getElementById("videoDir").value = data.video_dir || "";
+        document.getElementById("subDir").value = data.sub_dir || "";
+        document.getElementById("outputDir").value = data.output_dir || "";
+
+        currentMatchedItems = data.items || [];
+        renderTable(currentMatchedItems);
+
+        const isSameFolder = (data.video_dir && data.sub_dir && data.video_dir === data.sub_dir);
+        const folderModeBadge = isSameFolder 
+          ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-sky-950 text-sky-300 border border-sky-800">根目录同放模式</span>'
+          : '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-300 border border-slate-700">分目录模式</span>';
+
+        document.getElementById("statSummary").innerHTML = 
+          `短剧: <span class="text-white font-medium">${data.drama_name}</span> ${folderModeBadge} · 共 <span class="text-white font-medium">${data.total}</span> 集 (已配对: <span class="text-emerald-400 font-medium">${data.matched}</span>, 缺字幕: <span class="text-rose-400 font-medium">${data.missing}</span>)`;
+
+        document.getElementById("btnStart").disabled = (data.matched === 0);
+        const modeDesc = isSameFolder ? " (视频与字幕均在根目录)" : "";
+        appendLog({ time: new Date().toLocaleTimeString(), level: "INFO", msg: `扫描完成: 找到 ${data.total} 集，已匹配 ${data.matched} 集字幕${modeDesc}` });
+      } catch (e) {
+        alert("网络或接口异常: " + e.message);
+      } finally {
+        if (btn) btn.classList.remove("opacity-50");
+      }
+    }
+
+    // 渲染表格
+    function renderTable(items) {
+      const tbody = document.getElementById("episodesTbody");
+      if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="py-12 text-center text-slate-500">未发现视频文件，请核对视频目录路径</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = items.map((it, idx) => {
+        const isMatched = (it.status === "matched");
+        const state = it.state || "pending";
+
+        let stateBadge = '';
+        if (state === "processing") {
+          stateBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-950 text-amber-300 border border-amber-800 animate-pulse">压制中...</span>';
+        } else if (state === "completed") {
+          stateBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-950 text-emerald-300 border border-emerald-800">✓ 已完成</span>';
+        } else if (state === "failed") {
+          stateBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-rose-950 text-rose-300 border border-rose-800" title="${escapeHtml(it.error_msg)}">✗ 失败</span>`;
+        } else if (isMatched) {
+          stateBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-950 text-indigo-300 border border-indigo-800">待压制</span>';
+        } else {
+          stateBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">缺少字幕</span>';
+        }
+
+        const sizeOrDur = (it.duration_sec > 0) ? `${it.duration_sec}s / ${it.output_size_mb}MB` : `${it.video_size_mb}MB`;
+
+        return `
+          <tr class="hover:bg-slate-900/50 transition">
+            <td class="py-2 px-3">
+              <input type="checkbox" ${it.selected ? 'checked' : ''} ${!isMatched ? 'disabled' : ''} onchange="toggleItemSelect(${idx}, this.checked)" class="rounded bg-slate-800 border-slate-700 text-indigo-600">
+            </td>
+            <td class="py-2 px-3 font-mono font-medium text-slate-200">#${String(it.episode).padStart(2, '0')}</td>
+            <td class="py-2 px-3 text-slate-300 font-mono text-[11px] truncate max-w-[180px]" title="${escapeHtml(it.video_name)}">${escapeHtml(it.video_name)}</td>
+            <td class="py-2 px-3 ${isMatched ? 'text-indigo-300' : 'text-slate-600'} font-mono text-[11px] truncate max-w-[180px]" title="${escapeHtml(it.sub_name || '无')}">
+              ${escapeHtml(it.sub_name || '—')}
+            </td>
+            <td class="py-2 px-3">${stateBadge}</td>
+            <td class="py-2 px-3 font-mono text-[11px] text-right text-slate-400">${sizeOrDur}</td>
+            <td class="py-2 px-3 text-center space-x-1.5">
+              <button onclick="previewVideoFile('${encodeURIComponent(it.video_path)}', '原片: ${escapeHtml(it.video_name)}')" class="text-[11px] text-slate-400 hover:text-indigo-300">原片</button>
+              ${state === "completed" ? `
+                <button onclick="previewVideoFile('${encodeURIComponent(it.output_path)}', '压制后: ${escapeHtml(it.output_name)}')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium">预览结果</button>
+              ` : ''}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function toggleSelectAll(checked) {
+      currentMatchedItems.forEach(it => {
+        if (it.status === "matched") it.selected = checked;
+      });
+      renderTable(currentMatchedItems);
+    }
+
+    function toggleItemSelect(idx, checked) {
+      if (currentMatchedItems[idx]) {
+        currentMatchedItems[idx].selected = checked;
+      }
+    }
+
+    // 启动压制
+    async function startBatch() {
+      const selectedItems = currentMatchedItems.filter(it => it.selected && it.status === "matched");
+      if (selectedItems.length === 0) {
+        alert("请至少勾选一集进行压制！");
+        return;
+      }
+
+      const settings = {
+        font_size: parseInt(document.getElementById("fontSize").value) || 18,
+        bottom_pct: parseFloat(document.getElementById("bottomPct").value) || 20.0,
+        alignment: parseInt(document.getElementById("alignment").value) || 2,
+        encoder: document.getElementById("encoder").value,
+        bitrate: document.getElementById("bitrate").value.trim() || "1200k",
+        concurrency: parseInt(document.getElementById("concurrency").value) || 2,
+        sync_overwrite: document.getElementById("syncOverwrite").checked
+      };
+
+      try {
+        const res = await fetch("/api/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: selectedItems, settings: settings })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert("启动失败: " + err.detail);
+          return;
+        }
+
+        document.getElementById("btnStart").disabled = true;
+        document.getElementById("btnStop").disabled = false;
+        document.getElementById("progressBox").classList.remove("hidden");
+      } catch (e) {
+        alert("请求异常: " + e.message);
+      }
+    }
+
+    // 停止任务
+    async function stopBatch() {
+      if (confirm("确定要终止正在进行的压制任务吗？已压制完成的集数将保留。")) {
+        await fetch("/api/stop", { method: "POST" });
+      }
+    }
+
+    // 更新任务进度状态
+    function updateTaskProgress(status) {
+      if (!status) return;
+      const isRunning = status.is_running;
+
+      document.getElementById("btnStart").disabled = isRunning;
+      document.getElementById("btnStop").disabled = !isRunning;
+
+      const progressBox = document.getElementById("progressBox");
+      if (isRunning || status.total > 0) {
+        progressBox.classList.remove("hidden");
+      }
+
+      document.getElementById("progressPct").innerText = `${status.progress_pct}%`;
+      document.getElementById("progressBar").style.width = `${status.progress_pct}%`;
+      document.getElementById("progressCounts").innerText = `${status.completed + status.failed}/${status.total}`;
+      document.getElementById("progressElapsed").innerText = `${status.elapsed_sec}s`;
+
+      const icon = document.getElementById("progressStateIcon");
+      const text = document.getElementById("progressStateText");
+      if (isRunning) {
+        icon.className = "inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping";
+        text.innerText = `正在并发压制 (进行中: ${status.processing}集)...`;
+      } else if (status.total > 0) {
+        icon.className = "inline-block w-2 h-2 rounded-full bg-emerald-400";
+        text.innerText = `压制完成 (成功: ${status.completed}, 失败: ${status.failed})`;
+      }
+
+      // 实时更新表格状态
+      if (status.items && status.items.length > 0) {
+        // 合并状态
+        const map = new Map(status.items.map(i => [i.video_path, i]));
+        currentMatchedItems.forEach(it => {
+          if (map.has(it.video_path)) {
+            const updated = map.get(it.video_path);
+            it.state = updated.state;
+            it.duration_sec = updated.duration_sec;
+            it.output_size_mb = updated.output_size_mb;
+            it.error_msg = updated.error_msg;
+          }
+        });
+        renderTable(currentMatchedItems);
+      }
+    }
+
+    // 日志追加
+    function appendLog(entry) {
+      const consoleBox = document.getElementById("logConsole");
+      const div = document.createElement("div");
+      div.className = "log-line text-[11px] leading-relaxed";
+      
+      let color = "text-slate-400";
+      if (entry.level === "ERROR") color = "text-rose-400 font-semibold";
+      else if (entry.level === "WARN") color = "text-amber-400";
+      else if (entry.msg && entry.msg.startsWith("✓")) color = "text-emerald-300 font-semibold";
+
+      div.innerHTML = `<span class="text-slate-600">[${entry.time}]</span> <span class="${color}">${escapeHtml(entry.msg)}</span>`;
+      consoleBox.appendChild(div);
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+    }
+
+    function clearLogs() {
+      document.getElementById("logConsole").innerHTML = "";
+    }
+
+    function escapeHtml(text) {
+      return (text || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // Finder 打开目录
+    async function openOutputFinder() {
+      const outDir = document.getElementById("outputDir").value.trim() || document.getElementById("rootDir").value.trim();
+      if (!outDir) {
+        alert("请先填写或选择输出目录！");
+        return;
+      }
+      try {
+        const res = await fetch("/api/open-folder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: outDir })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert("打开失败: " + err.detail);
+        }
+      } catch (e) {
+        alert("调用系统接口异常: " + e.message);
+      }
+    }
+
+    // 目录选择器 Modal 逻辑
+    async function openFolderPicker(targetInputId) {
+      activeInputId = targetInputId;
+      const initialPath = document.getElementById(targetInputId).value.trim();
+      document.getElementById("folderFilterInput").value = "";
+      currentFilterText = "";
+      document.getElementById("folderModal").classList.remove("hidden");
+      document.getElementById("folderModal").classList.add("flex");
+      await loadBrowsePath(initialPath || "");
+    }
+
+    function closeFolderPicker() {
+      document.getElementById("folderModal").classList.add("hidden");
+      document.getElementById("folderModal").classList.remove("flex");
+      activeInputId = null;
+    }
+
+    async function loadBrowsePath(p) {
+      try {
+        const res = await fetch(`/api/browse?path=${encodeURIComponent(p || '')}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        browserState = data;
+        
+        document.getElementById("browserCurrentPath").innerText = data.current;
+        document.getElementById("confirmPathDisplay").innerText = data.current;
+        document.getElementById("btnParentFolder").disabled = data.is_root;
+
+        // 渲染面包屑
+        renderBreadcrumbs(data.breadcrumbs || []);
+        // 渲染快捷方式
+        renderShortcuts(data.shortcuts || []);
+        // 渲染目录列表
+        renderFolderList();
+      } catch (e) {
+        console.error("浏览目录失败:", e);
+      }
+    }
+
+    function renderBreadcrumbs(crumbs) {
+      const bar = document.getElementById("breadcrumbsBar");
+      if (!crumbs || crumbs.length === 0) {
+        bar.innerHTML = '';
+        return;
+      }
+      bar.innerHTML = crumbs.map((c, i) => `
+        <span onclick="loadBrowsePath(browserState.breadcrumbs[${i}].path)" 
+          class="cursor-pointer hover:text-indigo-400 hover:underline px-1 py-0.5 rounded transition ${i === crumbs.length - 1 ? 'text-slate-200 font-bold' : 'text-slate-400'}">
+          ${escapeHtml(c.name)}
+        </span>
+        ${i < crumbs.length - 1 ? '<span class="text-slate-600">/</span>' : ''}
+      `).join("");
+    }
+
+    function renderShortcuts(shortcuts) {
+      const bar = document.getElementById("shortcutsBar");
+      bar.innerHTML = (shortcuts || []).map((s, i) => `
+        <button onclick="loadBrowsePath(browserState.shortcuts[${i}].path)" 
+          class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] transition shrink-0 border border-slate-700/60">
+          ${escapeHtml(s.name)}
+        </button>
+      `).join("");
+    }
+
+    function onFilterInput(val) {
+      currentFilterText = (val || "").trim().toLowerCase();
+      renderFolderList();
+    }
+
+    function renderFolderList() {
+      const listDiv = document.getElementById("folderList");
+      let dirs = browserState.dirs || [];
+
+      if (currentFilterText) {
+        dirs = dirs.filter(d => d.name.toLowerCase().includes(currentFilterText));
+      }
+
+      if (!dirs || dirs.length === 0) {
+        listDiv.innerHTML = '<div class="py-12 text-center text-xs text-slate-500">无匹配子文件夹</div>';
+        return;
+      }
+
+      listDiv.innerHTML = dirs.map((d, idx) => `
+        <div class="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer text-xs text-slate-200 transition group">
+          <div onclick="enterDirByIndex(${idx})" class="flex items-center space-x-2.5 truncate flex-1 py-1">
+            <svg class="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path>
+            </svg>
+            <span class="truncate font-medium">${escapeHtml(d.name)}</span>
+          </div>
+          <div class="flex items-center space-x-1.5 shrink-0 ml-2">
+            <button onclick="pickThisDirByIndex(${idx})" class="px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-indigo-600 text-slate-300 hover:text-white rounded-md border border-slate-700/80 transition">
+              直接选取
+            </button>
+            <button onclick="enterDirByIndex(${idx})" class="p-1 text-slate-500 hover:text-slate-300 rounded" title="进入该目录">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function enterDirByIndex(idx) {
+      const d = (currentFilterText ? (browserState.dirs || []).filter(item => item.name.toLowerCase().includes(currentFilterText)) : browserState.dirs)[idx];
+      if (d && d.path) {
+        loadBrowsePath(d.path);
+      }
+    }
+
+    function pickThisDirByIndex(idx) {
+      const d = (currentFilterText ? (browserState.dirs || []).filter(item => item.name.toLowerCase().includes(currentFilterText)) : browserState.dirs)[idx];
+      if (d && d.path && activeInputId) {
+        document.getElementById(activeInputId).value = d.path;
+        closeFolderPicker();
+        if (activeInputId === "rootDir") {
+          document.getElementById("videoDir").value = "";
+          document.getElementById("subDir").value = "";
+          document.getElementById("outputDir").value = "";
+          scanAuto();
+        }
+      }
+    }
+
+    function navigateParent() {
+      if (browserState.parent) {
+        loadBrowsePath(browserState.parent);
+      }
+    }
+
+    function confirmSelectFolder() {
+      if (activeInputId && browserState.current) {
+        document.getElementById(activeInputId).value = browserState.current;
+        closeFolderPicker();
+        if (activeInputId === "rootDir") {
+          scanAuto();
+        }
+      }
+    }
+
+    // 视频预览 Modal
+    function previewVideoFile(encPath, title) {
+      const decoded = decodeURIComponent(encPath);
+      document.getElementById("videoTitle").innerText = title;
+      const player = document.getElementById("previewPlayer");
+      player.src = `/api/preview-video?path=${encodeURIComponent(decoded)}`;
+      document.getElementById("videoModal").classList.remove("hidden");
+      document.getElementById("videoModal").classList.add("flex");
+      player.play().catch(() => {});
+    }
+
+    function closeVideoModal() {
+      const player = document.getElementById("previewPlayer");
+      player.pause();
+      player.src = "";
+      document.getElementById("videoModal").classList.add("hidden");
+      document.getElementById("videoModal").classList.remove("flex");
+    }
+  </script>
+</body>
+</html>
