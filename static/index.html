@@ -87,24 +87,14 @@
           <span class="text-[11px] text-slate-400">✨ 支持视频与字幕放在同一目录，或分别存放在子目录下</span>
         </div>
         <div class="flex space-x-2">
-          <input type="text" id="rootDir" placeholder="/Users/jqs/chaodian/video/press_sub_mp4" 
+          <input type="text" id="rootDir" placeholder="请选择或输入短剧项目根目录（包含分集视频与字幕的文件夹）" 
             class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
-          <button onclick="pickFolderNative('rootDir')" class="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-indigo-600/30 transition flex items-center space-x-1.5" title="调起 macOS 原生 Finder 窗口选择文件夹">
+          <button onclick="pickFolderNative('rootDir')" class="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-indigo-600/30 transition flex items-center space-x-1.5" title="调起系统文件夹浏览窗口选择">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
             <span>系统选择</span>
           </button>
           <button onclick="openFolderPicker('rootDir')" class="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition flex items-center space-x-1.5" title="在网页目录树弹窗中点选">
             <span>目录树</span>
-          </button>
-        </div>
-        <!-- 常用快捷路径建议 -->
-        <div class="flex flex-wrap items-center gap-2 pt-1">
-          <span class="text-xs text-slate-500">快捷预设:</span>
-          <button onclick="setRootDir('/Users/jqs/chaodian/video/press_sub_mp4')" class="text-xs bg-slate-800/80 hover:bg-slate-800 text-indigo-300 border border-slate-700/60 px-2.5 py-1 rounded-lg transition">
-            当前项目 (press_sub_mp4)
-          </button>
-          <button onclick="setRootDir('/Users/jqs/chaodian/video')" class="text-xs bg-slate-800/80 hover:bg-slate-800 text-slate-400 border border-slate-700/60 px-2.5 py-1 rounded-lg transition">
-            上级目录 (/video)
           </button>
         </div>
       </div>
@@ -296,7 +286,7 @@
   </main>
 
   <!-- 弹窗 1: 本地文件夹浏览器 -->
-  <div id="folderModal" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4">
+  <div id="folderModal" onclick="if(event.target === this) closeFolderPicker()" class="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm hidden items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
       
       <!-- 弹窗顶栏 -->
@@ -369,7 +359,7 @@
   </div>
 
   <!-- 弹窗 2: 视频播放器预览 -->
-  <div id="videoModal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+  <div id="videoModal" onclick="if(event.target === this) closeVideoModal()" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full flex flex-col shadow-2xl overflow-hidden">
       <div class="p-3 border-b border-slate-800 flex items-center justify-between">
         <h3 id="videoTitle" class="text-xs font-semibold text-white truncate max-w-lg">视频预览</h3>
@@ -393,11 +383,17 @@
 
     // 初始化
     window.addEventListener("DOMContentLoaded", () => {
-      // 预置默认根目录
-      document.getElementById("rootDir").value = "/Users/jqs/chaodian/video/press_sub_mp4";
+      // 默认保持清空，不预置硬编码路径
+      document.getElementById("rootDir").value = "";
       connectSSE();
-      // 自动触发一次扫描
-      scanAuto();
+    });
+
+    // 监听 ESC 键一键关闭弹窗
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeFolderPicker();
+        closeVideoModal();
+      }
     });
 
     function setRootDir(path) {
@@ -504,6 +500,11 @@
       const videoDir = document.getElementById("videoDir").value.trim();
       const subDir = document.getElementById("subDir").value.trim();
       const outputDir = document.getElementById("outputDir").value.trim();
+
+      if (!rootDir && !videoDir) {
+        alert("请先选择或输入短剧项目根目录！");
+        return;
+      }
 
       const btn = event?.currentTarget;
       if (btn) btn.classList.add("opacity-50");

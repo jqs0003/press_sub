@@ -72,24 +72,31 @@ class ChooseFolderRequest(BaseModel):
 @app.post("/api/choose-folder-native")
 async def choose_folder_native(req: ChooseFolderRequest):
     """调起操作系统原生选择文件夹对话框 (macOS AppleScript)"""
-    init_path = req.initial_dir or str(PROJECT_ROOT)
+    init_path = req.initial_dir
+    if not init_path or not os.path.isdir(init_path):
+        user_home = Path.home()
+        init_path = str(user_home / "Movies") if (user_home / "Movies").exists() else str(user_home)
+
+    clean_init = str(init_path).replace('\\', '\\\\').replace('"', '\\"')
+
     if platform.system() == "Darwin":
-        if not os.path.isdir(init_path):
-            init_path = str(PROJECT_ROOT)
-        
-        clean_init = init_path.replace('\\', '\\\\').replace('"', '\\"')
         # AppleScript 原生选择文件夹
+        # 严格检查 -128 (用户点击取消)，避免取消时被内部捕获误触发第二次弹窗
         osa_script = f'''
         try
-            try
-                set defaultFolder to POSIX file "{clean_init}"
-                set chosenFolder to choose folder with prompt "请选择短剧或字幕文件夹:" default location defaultFolder
-            on error
-                set chosenFolder to choose folder with prompt "请选择短剧或字幕文件夹:"
-            end try
+            set defaultFolder to POSIX file "{clean_init}"
+            set chosenFolder to choose folder with prompt "请选择短剧或字幕文件夹:" default location defaultFolder
             return POSIX path of chosenFolder
-        on error
-            return "CANCEL"
+        on error errMsg number errNum
+            if errNum is -128 then
+                return "CANCEL"
+            end if
+            try
+                set chosenFolder to choose folder with prompt "请选择短剧或字幕文件夹:"
+                return POSIX path of chosenFolder
+            on error
+                return "CANCEL"
+            end try
         end try
         '''
         try:
@@ -148,7 +155,10 @@ async def browse_folder(path: Optional[str] = Query(None)):
             target = Path(path).resolve()
 
     if not target or not target.exists() or not target.is_dir():
-        target = PROJECT_ROOT
+        if getattr(sys, "frozen", False):
+            target = Path.cwd() if Path.cwd().exists() else Path.home()
+        else:
+            target = PROJECT_ROOT
 
     parent = str(target.parent) if target.parent != target else None
     
@@ -174,10 +184,11 @@ async def browse_folder(path: Optional[str] = Query(None)):
     breadcrumbs.reverse()
 
     # 系统常用快捷路径
+    root_shortcut = Path.cwd() if getattr(sys, "frozen", False) else PROJECT_ROOT
     shortcuts = [
-        {"name": "当前项目", "path": str(PROJECT_ROOT)},
-        {"name": "视频上级", "path": str(PROJECT_ROOT.parent)},
+        {"name": "当前目录", "path": str(root_shortcut)},
         {"name": "用户主目录", "path": str(Path.home())},
+        {"name": "影片", "path": str(Path.home() / "Movies")},
         {"name": "桌面", "path": str(Path.home() / "Desktop")},
         {"name": "下载", "path": str(Path.home() / "Downloads")},
     ]
