@@ -70,8 +70,14 @@ def find_executable(name: str) -> str:
     for d in search_dirs:
         for en in exe_names:
             candidate = d / en
-            if candidate.is_file() and os.access(candidate, os.X_OK if sys_name != "Windows" else os.R_OK):
-                return str(candidate)
+            if candidate.is_file():
+                if sys_name != "Windows":
+                    try:
+                        os.chmod(candidate, 0o755)
+                    except Exception:
+                        pass
+                if os.access(candidate, os.X_OK if sys_name != "Windows" else os.R_OK):
+                    return str(candidate)
 
     # 4. 系统 PATH 环境变量查找
     found = shutil.which(name)

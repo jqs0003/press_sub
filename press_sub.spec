@@ -1,12 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+import shutil
 
 block_cipher = None
+
+# 自动发现并全量打包系统内置的 ffmpeg 与 ffprobe（连同其所有依赖动态库 dylib）
+# 确保拷贝到任何全新 Mac（无需安装 Homebrew / ffmpeg）都能直接压制运行
+extra_binaries = []
+ffmpeg_path = shutil.which("ffmpeg") or "/opt/homebrew/bin/ffmpeg"
+ffprobe_path = shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe"
+
+if Path(ffmpeg_path).is_file():
+    extra_binaries.append((ffmpeg_path, '.'))
+if Path(ffprobe_path).is_file():
+    extra_binaries.append((ffprobe_path, '.'))
 
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[],
+    binaries=extra_binaries,
     datas=[
         ('static', 'static'),
         ('web', 'web'),
