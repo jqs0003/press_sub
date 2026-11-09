@@ -208,7 +208,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>开始批量压制</span>
+            <span id="btnStartText">开始批量压制</span>
           </button>
 
           <button id="btnStop" onclick="stopBatch()" disabled 
@@ -217,7 +217,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
             </svg>
-            <span>终止任务</span>
+            <span id="btnStopText">终止/暂停任务</span>
           </button>
         </div>
       </div>
@@ -444,6 +444,8 @@
           `短剧: <span class="text-white font-medium">${data.drama_name}</span> ${folderModeBadge} · 共 <span class="text-white font-medium">${data.total}</span> 集 (已配对: <span class="text-emerald-400 font-medium">${data.matched}</span>, 缺字幕: <span class="text-rose-400 font-medium">${data.missing}</span>)`;
 
         document.getElementById("btnStart").disabled = (data.matched === 0);
+        const btnStartText = document.getElementById("btnStartText");
+        if (btnStartText) btnStartText.innerText = "开始批量压制";
         const modeDesc = isSameFolder ? " (视频与字幕均在根目录)" : "";
         appendLog({ time: new Date().toLocaleTimeString(), level: "INFO", msg: `扫描完成: 找到 ${data.total} 集，已匹配 ${data.matched} 集字幕${modeDesc}` });
       } catch (e) {
@@ -470,6 +472,8 @@
           stateBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-950 text-amber-300 border border-amber-800 animate-pulse">压制中...</span>';
         } else if (state === "completed") {
           stateBadge = '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-950 text-emerald-300 border border-emerald-800">✓ 已完成</span>';
+        } else if (state === "canceled") {
+          stateBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-orange-950 text-orange-300 border border-orange-800" title="${escapeHtml(it.error_msg || '已手动终止/暂停')}">⏸ 已暂停</span>`;
         } else if (state === "failed") {
           stateBadge = `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-rose-950 text-rose-300 border border-rose-800" title="${escapeHtml(it.error_msg)}">✗ 失败</span>`;
         } else if (isMatched) {
@@ -492,10 +496,13 @@
             </td>
             <td class="py-2 px-3">${stateBadge}</td>
             <td class="py-2 px-3 font-mono text-[11px] text-right text-slate-400">${sizeOrDur}</td>
-            <td class="py-2 px-3 text-center space-x-1.5">
+            <td class="py-2 px-3 text-center space-x-1.5 whitespace-nowrap">
               <button onclick="previewVideoFile('${encodeURIComponent(it.video_path)}', '原片: ${escapeHtml(it.video_name)}')" class="text-[11px] text-slate-400 hover:text-indigo-300">原片</button>
               ${state === "completed" ? `
-                <button onclick="previewVideoFile('${encodeURIComponent(it.output_path)}', '压制后: ${escapeHtml(it.output_name)}')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium">预览结果</button>
+                <button onclick="previewVideoFile('${encodeURIComponent(it.output_path)}', '压制后: ${escapeHtml(it.output_name)}')" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-medium">预览</button>
+              ` : ''}
+              ${(state === "failed" || state === "canceled") ? `
+                <button onclick="repressSingle(${idx})" class="text-[11px] text-amber-400 hover:text-amber-300 font-medium">重压</button>
               ` : ''}
             </td>
           </tr>
@@ -516,12 +523,40 @@
       }
     }
 
+    function repressSingle(idx) {
+      if (!currentMatchedItems[idx]) return;
+      currentMatchedItems.forEach((it, i) => {
+        if (i === idx) {
+          it.selected = true;
+          it.state = "pending";
+          it.error_msg = "";
+        }
+      });
+      renderTable(currentMatchedItems);
+      startBatch();
+    }
+
     // 启动压制
     async function startBatch() {
       const selectedItems = currentMatchedItems.filter(it => it.selected && it.status === "matched");
       if (selectedItems.length === 0) {
         alert("请至少勾选一集进行压制！");
         return;
+      }
+
+      // 如果选中的所有分集都已经处于 completed 状态，提示用户是否重新压制所有分集
+      const pendingOrRemaining = selectedItems.filter(it => it.state !== "completed");
+      if (pendingOrRemaining.length === 0) {
+        if (!confirm("选中的分集均已压制完成。是否将已完成集数重置并重新压制？")) {
+          return;
+        }
+        selectedItems.forEach(it => {
+          it.state = "pending";
+          it.error_msg = "";
+          it.duration_sec = 0;
+          it.output_size_mb = 0;
+        });
+        renderTable(currentMatchedItems);
       }
 
       const settings = {
@@ -548,16 +583,24 @@
 
         document.getElementById("btnStart").disabled = true;
         document.getElementById("btnStop").disabled = false;
+        const btnStopText = document.getElementById("btnStopText");
+        if (btnStopText) btnStopText.innerText = "终止/暂停任务";
         document.getElementById("progressBox").classList.remove("hidden");
       } catch (e) {
         alert("请求异常: " + e.message);
       }
     }
 
-    // 停止任务
+    // 终止/暂停任务
     async function stopBatch() {
-      if (confirm("确定要终止正在进行的压制任务吗？已压制完成的集数将保留。")) {
+      const btnStop = document.getElementById("btnStop");
+      const btnStopText = document.getElementById("btnStopText");
+      if (btnStopText) btnStopText.innerText = "正在终止...";
+      btnStop.disabled = true;
+      try {
         await fetch("/api/stop", { method: "POST" });
+      } catch (e) {
+        console.error("停止请求失败:", e);
       }
     }
 
@@ -566,8 +609,28 @@
       if (!status) return;
       const isRunning = status.is_running;
 
-      document.getElementById("btnStart").disabled = isRunning;
-      document.getElementById("btnStop").disabled = !isRunning;
+      const btnStart = document.getElementById("btnStart");
+      const btnStartText = document.getElementById("btnStartText");
+      const btnStop = document.getElementById("btnStop");
+      const btnStopText = document.getElementById("btnStopText");
+
+      btnStart.disabled = isRunning;
+      btnStop.disabled = !isRunning;
+      if (btnStopText && !isRunning) {
+        btnStopText.innerText = "终止/暂停任务";
+      }
+
+      // 计算剩余待压制集数
+      const remainingCount = currentMatchedItems.filter(it => it.selected && it.status === "matched" && it.state !== "completed").length;
+      if (btnStartText) {
+        if (isRunning) {
+          btnStartText.innerText = "正在压制中...";
+        } else if (status.completed > 0 && remainingCount > 0) {
+          btnStartText.innerText = `继续压制剩余集数 (${remainingCount}集)`;
+        } else {
+          btnStartText.innerText = "开始批量压制";
+        }
+      }
 
       const progressBox = document.getElementById("progressBox");
       if (isRunning || status.total > 0) {
@@ -584,6 +647,9 @@
       if (isRunning) {
         icon.className = "inline-block w-2 h-2 rounded-full bg-amber-400 animate-ping";
         text.innerText = `正在并发压制 (进行中: ${status.processing}集)...`;
+      } else if (status.cancel_requested || status.canceled > 0) {
+        icon.className = "inline-block w-2 h-2 rounded-full bg-orange-400";
+        text.innerText = `任务已终止/暂停 (已完成: ${status.completed}, 待续压: ${(status.canceled || 0) + (status.failed || 0)}集)`;
       } else if (status.total > 0) {
         icon.className = "inline-block w-2 h-2 rounded-full bg-emerald-400";
         text.innerText = `压制完成 (成功: ${status.completed}, 失败: ${status.failed})`;

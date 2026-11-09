@@ -115,6 +115,8 @@ class TaskManager:
         self.subscribers: List[asyncio.Queue] = []
         self.thread: Optional[threading.Thread] = None
         self._state_lock = threading.Lock()
+        self._active_processes: Dict[str, subprocess.Popen] = {}
+        self._executor: Optional[ThreadPoolExecutor] = None
 
     def get_status(self) -> Dict[str, Any]:
         with self._state_lock:
@@ -122,6 +124,7 @@ class TaskManager:
             completed = sum(1 for it in self.items if it.get("state") == "completed")
             failed = sum(1 for it in self.items if it.get("state") == "failed")
             processing = sum(1 for it in self.items if it.get("state") == "processing")
+            canceled = sum(1 for it in self.items if it.get("state") == "canceled")
             
             elapsed = 0.0
             if self.is_running and self.start_time > 0:
@@ -139,6 +142,7 @@ class TaskManager:
                 "completed": completed,
                 "failed": failed,
                 "processing": processing,
+                "canceled": canceled,
                 "progress_pct": pct,
                 "elapsed_sec": round(elapsed, 1),
                 "items": self.items,
@@ -171,9 +175,34 @@ class TaskManager:
 
     def stop_task(self):
         with self._state_lock:
-            if self.is_running:
-                self.cancel_requested = True
-                self.add_log("WARN", "已收到停止请求，正在等待当前正在进行的集数结束...")
+            if not self.is_running:
+                return
+            self.cancel_requested = True
+            self.add_log("WARN", "⏹ 收到终止指令，立即暂停/终止所有正在进行与排队中的压制任务...")
+
+            # 1. 立即强制杀死所有当前正在运行的 FFmpeg 进程
+            for v_name, proc in list(self._active_processes.items()):
+                try:
+                    if proc.poll() is None:
+                        proc.kill()
+                except Exception as e:
+                    logger.warning("Error killing process %s: %s", v_name, e)
+            self._active_processes.clear()
+
+            # 2. 取消线程池中尚未开始的排队任务
+            if self._executor is not None:
+                try:
+                    self._executor.shutdown(wait=False, cancel_futures=True)
+                except Exception as e:
+                    logger.warning("Error cancelling executor futures: %s", e)
+
+            # 3. 将所有未完成（进行中、排队中）的分集状态标记为 canceled
+            for it in self.items:
+                if it.get("state") in ("processing", "pending"):
+                    it["state"] = "canceled"
+                    it["error_msg"] = "已手动终止/暂停"
+
+        self._notify_subscribers({"type": "progress", "data": self.get_status()})
 
     def start_batch(self, items: List[Dict[str, Any]], settings: Dict[str, Any]) -> bool:
         with self._state_lock:
@@ -187,18 +216,25 @@ class TaskManager:
             self.end_time = 0.0
             self.settings = settings
             self.logs.clear()
+            self._active_processes.clear()
+            self._executor = None
             
-            # 初始化分集状态
+            # 初始化分集状态（已完成的集数保留 completed 状态，实现断点续压）
             self.items = []
             for it in items:
                 item_copy = dict(it)
-                item_copy["state"] = "pending"
-                item_copy["duration_sec"] = 0.0
-                item_copy["error_msg"] = ""
-                item_copy["output_size_mb"] = 0.0
+                if item_copy.get("state") == "completed":
+                    # 保持完成状态
+                    pass
+                else:
+                    item_copy["state"] = "pending"
+                    item_copy["duration_sec"] = 0.0
+                    item_copy["error_msg"] = ""
+                    item_copy["output_size_mb"] = 0.0
                 self.items.append(item_copy)
 
-        self.add_log("INFO", f"启动批量压制任务 (共 {len(items)} 集, 并发: {settings.get('concurrency', 2)})")
+        target_count = sum(1 for it in self.items if it.get("selected", True) and it.get("status") == "matched" and it.get("state") != "completed")
+        self.add_log("INFO", f"启动批量压制任务 (总计 {len(items)} 集, 待压制 {target_count} 集, 并发: {settings.get('concurrency', 2)})")
         
         self.thread = threading.Thread(target=self._run_worker, daemon=True)
         self.thread.start()
@@ -230,12 +266,25 @@ class TaskManager:
         self.add_log("INFO", f"字幕参数配置: 字号={font_size}px, 距底={bottom_pct}%, Alignment={alignment}, MarginV={margin_v}")
         self.add_log("INFO", f"编码器参数: {encoder}, 码率: {bitrate}, 同步覆盖原文件: {'是' if sync_overwrite else '否'}")
 
-        # 过滤需要处理的项目
-        target_items = [it for it in self.items if it.get("selected", True) and it.get("status") == "matched"]
+        # 过滤需要处理的项目（未完成且勾选的项目）
+        target_items = [
+            it for it in self.items 
+            if it.get("selected", True) and it.get("status") == "matched" and it.get("state") != "completed"
+        ]
+
+        if not target_items:
+            self.add_log("INFO", "选中的项目均已压制完成，无需重复处理。")
+            with self._state_lock:
+                self.is_running = False
+                self.end_time = time.time()
+            self._notify_subscribers({"type": "finish", "data": self.get_status()})
+            return
 
         def process_one(item_dict: Dict[str, Any]):
             if self.cancel_requested:
-                item_dict["state"] = "canceled"
+                with self._state_lock:
+                    item_dict["state"] = "canceled"
+                    item_dict["error_msg"] = "已手动终止/暂停"
                 return
 
             v_path = Path(item_dict["video_path"])
@@ -264,6 +313,15 @@ class TaskManager:
                 return
 
             with self._state_lock:
+                if self.cancel_requested:
+                    item_dict["state"] = "canceled"
+                    item_dict["error_msg"] = "已手动终止/暂停"
+                    if safe_sub.exists():
+                        try:
+                            safe_sub.unlink()
+                        except OSError:
+                            pass
+                    return
                 item_dict["state"] = "processing"
             self._notify_subscribers({"type": "progress", "data": self.get_status()})
             self.add_log("INFO", f"开始压制: {v_path.name} -> {out_path.name}")
@@ -283,19 +341,60 @@ class TaskManager:
                 ]
 
                 t0 = time.time()
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                with self._state_lock:
+                    self._active_processes[v_path.name] = proc
+
+                stdout_b, stderr_b = proc.communicate()
+                returncode = proc.returncode
+
+                with self._state_lock:
+                    self._active_processes.pop(v_path.name, None)
+
                 dur_sec = round(time.time() - t0, 1)
 
+                if self.cancel_requested:
+                    if tmp_out.exists():
+                        try:
+                            tmp_out.unlink()
+                        except OSError:
+                            pass
+                    with self._state_lock:
+                        item_dict["state"] = "canceled"
+                        item_dict["error_msg"] = "已手动终止/暂停"
+                    self.add_log("WARN", f"[{v_path.name}] 任务已手动终止")
+                    self._notify_subscribers({"type": "progress", "data": self.get_status()})
+                    return
+
                 # 若硬件加速失败，自动尝试 libx264 兜底
-                if res.returncode != 0 and encoder != "libx264":
+                if returncode != 0 and encoder != "libx264" and not self.cancel_requested:
                     self.add_log("WARN", f"[{v_path.name}] 硬件加速({encoder})失败，尝试切换 libx264 兜底...")
                     cmd[cmd.index("-c:v") + 1] = "libx264"
-                    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    with self._state_lock:
+                        self._active_processes[v_path.name] = proc
+                    stdout_b, stderr_b = proc.communicate()
+                    returncode = proc.returncode
+                    with self._state_lock:
+                        self._active_processes.pop(v_path.name, None)
 
-                if res.returncode != 0:
+                if self.cancel_requested:
+                    if tmp_out.exists():
+                        try:
+                            tmp_out.unlink()
+                        except OSError:
+                            pass
+                    with self._state_lock:
+                        item_dict["state"] = "canceled"
+                        item_dict["error_msg"] = "已手动终止/暂停"
+                    self.add_log("WARN", f"[{v_path.name}] 任务已手动终止")
+                    self._notify_subscribers({"type": "progress", "data": self.get_status()})
+                    return
+
+                if returncode != 0:
                     if tmp_out.exists():
                         tmp_out.unlink()
-                    err_text = res.stderr.decode("utf-8", errors="ignore")[-200:].strip()
+                    err_text = stderr_b.decode("utf-8", errors="ignore")[-200:].strip()
                     with self._state_lock:
                         item_dict["state"] = "failed"
                         item_dict["error_msg"] = err_text
@@ -351,9 +450,13 @@ class TaskManager:
 
         # 使用线程池并发调度
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            self._executor = executor
             futures = [executor.submit(process_one, it) for it in target_items]
             for f in futures:
-                f.result()
+                try:
+                    f.result()
+                except Exception:
+                    pass
 
         with self._state_lock:
             self.is_running = False
@@ -361,5 +464,8 @@ class TaskManager:
             total_elapsed = round(self.end_time - self.start_time, 1)
 
         status = self.get_status()
-        self.add_log("INFO", f"全部任务结束！总用时: {total_elapsed}秒 (成功: {status['completed']}, 失败: {status['failed']})")
+        if self.cancel_requested:
+            self.add_log("WARN", f"⏹ 压制任务已成功终止暂停！总用时: {total_elapsed}秒 (已完成: {status['completed']}, 暂停/未完成: {status['canceled'] + status['failed']})")
+        else:
+            self.add_log("INFO", f"全部任务结束！总用时: {total_elapsed}秒 (成功: {status['completed']}, 失败: {status['failed']})")
         self._notify_subscribers({"type": "finish", "data": status})
