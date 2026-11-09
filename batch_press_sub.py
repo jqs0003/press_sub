@@ -8,6 +8,9 @@
 import os
 import sys
 import time
+import shutil
+import tempfile
+import uuid
 import subprocess
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -29,52 +32,69 @@ def process_episode(video_file: Path):
     tmp_out = OUT_DIR / f"{video_file.name}.tmp.mp4"
     final_out = OUT_DIR / video_file.name
     
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_file),
-        "-vf", f"subtitles={sub_file}:force_style='FontSize=18,Alignment=2,MarginV=58'",
-        "-c:v", "h264_videotoolbox",
-        "-b:v", "1200k",
-        "-c:a", "copy",
-        str(tmp_out)
-    ]
-    
-    t0 = time.time()
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    duration = time.time() - t0
-    
-    if res.returncode != 0:
-        if tmp_out.exists():
-            tmp_out.unlink()
-        err_msg = res.stderr.decode('utf-8', errors='ignore')[-300:]
-        return False, f"[{video_file.name}] 压制失败: {err_msg}"
-    
-    # 简单校验
-    probe_cmd = [
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", str(tmp_out)
-    ]
-    probe = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    clean_sub_dir = Path(tempfile.gettempdir()) / "press_sub_cache"
+    clean_sub_dir.mkdir(parents=True, exist_ok=True)
+    clean_ext = "".join(c for c in sub_file.suffix.lower() if c.isalnum()) or "srt"
+    safe_sub = clean_sub_dir / f"sub_{uuid.uuid4().hex[:12]}.{clean_ext}"
     try:
-        dur = float(probe.stdout.decode().strip())
-        if dur <= 0:
-            raise ValueError("Duration is 0")
+        shutil.copyfile(sub_file, safe_sub)
     except Exception as e:
-        if tmp_out.exists():
-            tmp_out.unlink()
-        return False, f"[{video_file.name}] 校验失败: {e}"
-        
-    tmp_out.replace(final_out)
-    # 同步回原视频目录
-    target_in_src = video_file.parent / video_file.name
+        return False, f"[{video_file.name}] 字幕预处理失败: {e}"
+
+    safe_sub_arg = str(safe_sub.as_posix()).replace(":", r"\:").replace("'", r"\'")
+    
     try:
-        import shutil
-        shutil.copy2(final_out, target_in_src)
-    except Exception as e:
-        print(f"Warning: failed to sync back to src dir: {e}")
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(video_file),
+            "-vf", f"subtitles='{safe_sub_arg}':force_style='FontSize=18,Alignment=2,MarginV=58'",
+            "-c:v", "h264_videotoolbox",
+            "-b:v", "1200k",
+            "-c:a", "copy",
+            str(tmp_out)
+        ]
         
-    size_mb = final_out.stat().st_size / (1024 * 1024)
-    return True, f"[{video_file.name}] 压制成功 ({duration:.1f}s, 大小 {size_mb:.1f}MB)"
+        t0 = time.time()
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        duration = time.time() - t0
+        
+        if res.returncode != 0:
+            if tmp_out.exists():
+                tmp_out.unlink()
+            err_msg = res.stderr.decode('utf-8', errors='ignore')[-300:]
+            return False, f"[{video_file.name}] 压制失败: {err_msg}"
+        
+        # 简单校验
+        probe_cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(tmp_out)
+        ]
+        probe = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            dur = float(probe.stdout.decode().strip())
+            if dur <= 0:
+                raise ValueError("Duration is 0")
+        except Exception as e:
+            if tmp_out.exists():
+                tmp_out.unlink()
+            return False, f"[{video_file.name}] 校验失败: {e}"
+            
+        tmp_out.replace(final_out)
+        # 同步回原视频目录
+        target_in_src = video_file.parent / video_file.name
+        try:
+            shutil.copy2(final_out, target_in_src)
+        except Exception as e:
+            print(f"Warning: failed to sync back to src dir: {e}")
+            
+        size_mb = final_out.stat().st_size / (1024 * 1024)
+        return True, f"[{video_file.name}] 压制成功 ({duration:.1f}s, 大小 {size_mb:.1f}MB)"
+    finally:
+        if safe_sub.exists():
+            try:
+                safe_sub.unlink()
+            except OSError:
+                pass
 
 def main():
     # 清理 output 目录下的历史测试文件

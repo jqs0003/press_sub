@@ -242,7 +242,11 @@ class TaskManager:
             # 准备安全字幕临时文件（避免父路径中单引号、空格或特殊字符破坏 ffmpeg -vf 解析语法）
             clean_sub_dir = Path(tempfile.gettempdir()) / "press_sub_cache"
             clean_sub_dir.mkdir(parents=True, exist_ok=True)
-            safe_sub = clean_sub_dir / f"sub_{uuid.uuid4().hex[:12]}{s_path.suffix.lower()}"
+            # 过滤后缀只保留字母数字，彻底避免例如 39'.srt 导致后缀带引号
+            clean_ext = "".join(c for c in s_path.suffix.lower() if c.isalnum())
+            if not clean_ext:
+                clean_ext = "srt"
+            safe_sub = clean_sub_dir / f"sub_{uuid.uuid4().hex[:12]}.{clean_ext}"
             try:
                 shutil.copyfile(s_path, safe_sub)
             except Exception as e:
@@ -258,11 +262,14 @@ class TaskManager:
             self._notify_subscribers({"type": "progress", "data": self.get_status()})
             self.add_log("INFO", f"开始压制: {v_path.name} -> {out_path.name}")
 
+            # 转义 safe_sub 路径，防止 Windows 冒号 C\: 或特殊字符导致 FFmpeg 滤镜解析失败
+            safe_sub_arg = str(safe_sub.as_posix()).replace(":", r"\:").replace("'", r"\'")
+
             try:
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", str(v_path),
-                    "-vf", f"subtitles='{safe_sub}':force_style='{force_style}'",
+                    "-vf", f"subtitles='{safe_sub_arg}':force_style='{force_style}'",
                     "-c:v", encoder,
                     "-b:v", bitrate,
                     "-c:a", "copy",
