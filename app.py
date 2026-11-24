@@ -18,10 +18,23 @@ if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
 
-def open_browser_later(url: str, delay: float = 1.0):
-    """延迟在系统浏览器中自动打开控制台网址"""
+def open_browser_when_ready(host: str, port: int, url: str, timeout: float = 30.0):
+    """在后台轮询检测 Web 服务端口，确保服务真正启动且可用后再打开浏览器，避免出现空白页或连接被拒绝"""
     def _open():
-        time.sleep(delay)
+        import socket
+        start_time = time.time()
+        test_host = "127.0.0.1" if host in ("0.0.0.0", "127.0.0.1") else host
+        while time.time() - start_time < timeout:
+            try:
+                with socket.create_connection((test_host, port), timeout=0.2):
+                    break
+            except (ConnectionRefusedError, OSError):
+                time.sleep(0.1)
+        else:
+            return
+
+        # 端口已连通，留出 0.1 秒微小缓冲确保 HTTP 服务就绪
+        time.sleep(0.1)
         try:
             if platform.system() == "Darwin":
                 subprocess.run(["open", url])
@@ -31,6 +44,7 @@ def open_browser_later(url: str, delay: float = 1.0):
                 subprocess.run(["xdg-open", url])
         except Exception:
             pass
+
     threading.Thread(target=_open, daemon=True).start()
 
 
@@ -55,7 +69,7 @@ def main():
     print("=" * 60)
 
     if not args.no_browser:
-        open_browser_later(url, delay=1.2)
+        open_browser_when_ready(args.host, args.port, url)
 
     from web.app import app
     uvicorn.run(app, host=args.host, port=args.port, reload=False)
