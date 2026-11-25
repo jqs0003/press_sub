@@ -324,8 +324,8 @@ async def restart_service():
     env = _clean_pyinstaller_env()
 
     def _do_restart():
-        # 给 HTTP 响应发送以及子进程清理留出缓冲时间
-        time.sleep(0.3)
+        # 给 HTTP 响应发送以及子进程清理留出短暂缓冲
+        time.sleep(0.25)
         try:
             if platform.system() == "Windows":
                 creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -333,26 +333,24 @@ async def restart_service():
                 subprocess.Popen(
                     ["cmd", "/c", f"ping -n 2 127.0.0.1 >nul && {cmdline}"],
                     env=env,
+                    stdin=subprocess.DEVNULL,
+                    close_fds=True,
                     creationflags=creationflags,
                 )
             else:
-                # 在独立会话中延迟 0.8s 启动新实例，确保旧进程已释放端口
+                # 在独立会话中延迟 0.8s 启动新实例；旧进程随后立即 os._exit(0) 释放端口，避免 Keep-Alive/SSE 阻塞端口
                 subprocess.Popen(
                     ["/bin/sh", "-c", 'sleep 0.8 && exec "$@"', "sh"] + cmd,
                     env=env,
+                    stdin=subprocess.DEVNULL,
+                    close_fds=True,
                     start_new_session=True,
                 )
         except Exception as e:
             logger.error("拉起重启进程失败: %s", e)
             return
 
-        try:
-            os.kill(os.getpid(), signal.SIGTERM)
-        except Exception:
-            os._exit(0)
-
-        # 兜底：若 uvicorn 1.5s 内未正常退出，强制退出避免端口残留
-        time.sleep(1.5)
+        # 立即退出当前进程，由操作系统瞬间释放监听端口（避免 uvicorn 等待 SSE/Keep-Alive 连接超时）
         os._exit(0)
 
     threading.Thread(target=_do_restart, daemon=True).start()

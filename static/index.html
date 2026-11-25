@@ -774,9 +774,9 @@
         // 服务断开连接属于正常现象
       }
 
-      // 轮询等待新服务启动就绪后自动刷新页面
+      // 轮询等待新服务启动就绪后自动刷新页面（兼容单文件打包冷解压耗时）
       const startTime = Date.now();
-      const maxWaitMs = 30000;
+      const maxWaitMs = 45000;
       setTimeout(function pollServer() {
         fetch("/api/status", { cache: "no-store" })
           .then(res => {

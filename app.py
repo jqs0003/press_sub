@@ -71,6 +71,15 @@ def main():
     if not args.no_browser:
         open_browser_when_ready(args.host, args.port, url)
 
+    # 若刚触发重启，短暂等待旧进程完全释放端口（最多 5 秒）
+    import socket
+    check_host = "127.0.0.1" if args.host in ("0.0.0.0", "127.0.0.1") else args.host
+    for _ in range(25):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex((check_host, args.port)) != 0:
+                break
+        time.sleep(0.2)
+
     from web.app import app
     uvicorn.run(app, host=args.host, port=args.port, reload=False)
 
