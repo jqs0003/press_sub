@@ -337,21 +337,14 @@ async def restart_service():
                     close_fds=True,
                     creationflags=creationflags,
                 )
+                os._exit(0)
             else:
-                # 在独立会话中延迟 0.8s 启动新实例；旧进程随后立即 os._exit(0) 释放端口，避免 Keep-Alive/SSE 阻塞端口
-                subprocess.Popen(
-                    ["/bin/sh", "-c", 'sleep 0.8 && exec "$@"', "sh"] + cmd,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    close_fds=True,
-                    start_new_session=True,
-                )
+                # macOS / Linux：使用 os.execve 原地替换进程镜像
+                # 保持原 PID 与终端/后台任务连接不断开；且 socket 默认带有 FD_CLOEXEC，execve 时内核自动释放端口并断开旧长连接
+                os.execve(cmd[0], cmd, env)
         except Exception as e:
             logger.error("拉起重启进程失败: %s", e)
-            return
-
-        # 立即退出当前进程，由操作系统瞬间释放监听端口（避免 uvicorn 等待 SSE/Keep-Alive 连接超时）
-        os._exit(0)
+            os._exit(1)
 
     threading.Thread(target=_do_restart, daemon=True).start()
     return {"message": "已强制终止所有任务，服务正在重启..."}
