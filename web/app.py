@@ -10,8 +10,11 @@ import logging
 import os
 from pathlib import Path
 import platform
+import signal
 import subprocess
 import sys
+import threading
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -287,6 +290,73 @@ async def stop_task():
     """终止压制任务"""
     task_manager.stop_task()
     return {"message": "已下发终止请求"}
+
+
+def _clean_pyinstaller_env() -> Dict[str, str]:
+    """清理 PyInstaller 注入的临时环境变量，避免子进程引用即将被销毁的旧 _MEIPASS 目录"""
+    env = os.environ.copy()
+    env.pop("_MEIPASS2", None)
+    for var in ("DYLD_LIBRARY_PATH", "LD_LIBRARY_PATH"):
+        orig_var = f"{var}_ORIG"
+        if orig_var in env:
+            env[var] = env.pop(orig_var)
+        elif var in env and "_MEI" in env[var]:
+            env.pop(var, None)
+    return env
+
+
+def _build_restart_command() -> List[str]:
+    """构建原地重启命令（附加 --no-browser，由当前前端页面自动重连刷新）"""
+    extra_args = [a for a in sys.argv[1:] if a != "--no-browser"] + ["--no-browser"]
+    if getattr(sys, "frozen", False):
+        return [sys.executable] + extra_args
+    entry_script = str(Path(__file__).resolve().parent.parent / "app.py")
+    return [sys.executable, entry_script] + extra_args
+
+
+@app.post("/api/restart")
+async def restart_service():
+    """强制关闭所有运行中的压制任务并重启整个服务"""
+    logger.warning("收到服务重启指令，正在强制终止所有任务并准备重启...")
+    task_manager.stop_task()
+
+    cmd = _build_restart_command()
+    env = _clean_pyinstaller_env()
+
+    def _do_restart():
+        # 给 HTTP 响应发送以及子进程清理留出缓冲时间
+        time.sleep(0.3)
+        try:
+            if platform.system() == "Windows":
+                creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                cmdline = subprocess.list2cmdline(cmd)
+                subprocess.Popen(
+                    ["cmd", "/c", f"ping -n 2 127.0.0.1 >nul && {cmdline}"],
+                    env=env,
+                    creationflags=creationflags,
+                )
+            else:
+                # 在独立会话中延迟 0.8s 启动新实例，确保旧进程已释放端口
+                subprocess.Popen(
+                    ["/bin/sh", "-c", 'sleep 0.8 && exec "$@"', "sh"] + cmd,
+                    env=env,
+                    start_new_session=True,
+                )
+        except Exception as e:
+            logger.error("拉起重启进程失败: %s", e)
+            return
+
+        try:
+            os.kill(os.getpid(), signal.SIGTERM)
+        except Exception:
+            os._exit(0)
+
+        # 兜底：若 uvicorn 1.5s 内未正常退出，强制退出避免端口残留
+        time.sleep(1.5)
+        os._exit(0)
+
+    threading.Thread(target=_do_restart, daemon=True).start()
+    return {"message": "已强制终止所有任务，服务正在重启..."}
 
 
 @app.get("/api/status")

@@ -54,6 +54,12 @@
           </svg>
           <span>在 Finder 中查看输出</span>
         </button>
+        <button id="btnRestart" onclick="restartApp()" class="text-xs bg-rose-950/80 hover:bg-rose-900 disabled:opacity-50 disabled:cursor-not-allowed text-rose-300 px-3 py-1.5 rounded-lg border border-rose-800/60 flex items-center space-x-1.5 transition" title="强制关闭所有压制任务并重启服务">
+          <svg id="btnRestartIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span id="btnRestartText">重启服务</span>
+        </button>
       </div>
     </div>
   </header>
@@ -735,6 +741,62 @@
       player.src = "";
       document.getElementById("videoModal").classList.add("hidden");
       document.getElementById("videoModal").classList.remove("flex");
+    }
+
+    // 强制关闭所有任务并重启服务
+    async function restartApp() {
+      if (!confirm("确定要强制关闭所有正在进行的任务并重启服务吗？未压制完成的临时文件将被清理。")) {
+        return;
+      }
+
+      const btn = document.getElementById("btnRestart");
+      const btnText = document.getElementById("btnRestartText");
+      const btnIcon = document.getElementById("btnRestartIcon");
+      const badge = document.getElementById("connBadge");
+
+      btn.disabled = true;
+      if (btnText) btnText.innerText = "正在重启...";
+      if (btnIcon) btnIcon.classList.add("animate-spin");
+
+      badge.className = "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800";
+      badge.innerHTML = '<span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-amber-400 animate-ping"></span>正在重启服务...';
+
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+
+      appendLog({ time: new Date().toLocaleTimeString(), level: "WARN", msg: "🔄 正在强制关闭所有任务并重启服务，请稍候..." });
+
+      try {
+        await fetch("/api/restart", { method: "POST" });
+      } catch (e) {
+        // 服务断开连接属于正常现象
+      }
+
+      // 轮询等待新服务启动就绪后自动刷新页面
+      const startTime = Date.now();
+      const maxWaitMs = 30000;
+      setTimeout(function pollServer() {
+        fetch("/api/status", { cache: "no-store" })
+          .then(res => {
+            if (res.ok) {
+              window.location.reload();
+            } else {
+              throw new Error("not ready");
+            }
+          })
+          .catch(() => {
+            if (Date.now() - startTime < maxWaitMs) {
+              setTimeout(pollServer, 500);
+            } else {
+              btn.disabled = false;
+              if (btnText) btnText.innerText = "重启服务";
+              if (btnIcon) btnIcon.classList.remove("animate-spin");
+              alert("等待服务重启超时，请手动刷新页面或检查后台进程。");
+            }
+          });
+      }, 1200);
     }
   </script>
 </body>
